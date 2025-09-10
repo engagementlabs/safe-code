@@ -1,0 +1,25 @@
+FROM golang:1.21-alpine AS builder
+
+WORKDIR /app
+COPY parent-main.go .
+COPY go.mod .
+
+# Build args for version info
+ARG VERSION=parent-v1.0
+ARG COMMIT_SHA=hybrid-architecture
+ARG BUILD_TIME=2025-09-10T14:00:00Z
+
+# Build static binary
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags="-s -w -X main.Version=$VERSION -X main.CommitSHA=$COMMIT_SHA -X main.BuildTime=$BUILD_TIME" \
+    -o bot parent-main.go
+
+# Runtime image
+FROM gcr.io/distroless/static-debian12
+
+# Copy binary
+USER 65534
+COPY --from=builder /app/bot /bot
+
+EXPOSE 8080
+ENTRYPOINT ["/bot"]
