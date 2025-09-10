@@ -1,0 +1,75 @@
+name: Deploy to Digital Ocean
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Deploy to Digital Ocean
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@main
+
+      - name: Install Digital Ocean CLI
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.ACCESS_TOKEN }}
+
+      - name: Set repository name and env suffix based on branch
+        run: |
+          echo "REPO_NAME=$(basename ${{ github.repository }})" >> $GITHUB_ENV
+          if [ "${{ github.ref_name }}" = "production" ]; then
+            echo "ENV_SUFFIX=p" >> $GITHUB_ENV
+          elif [ "${{ github.ref_name }}" = "main" ]; then
+            echo "ENV_SUFFIX=p" >> $GITHUB_ENV
+          elif [ "${{ github.ref_name }}" = "dev" ]; then
+            echo "ENV_SUFFIX=s" >> $GITHUB_ENV
+          fi
+
+      - name: Generate build attestation
+        id: attestation
+        run: |
+          # Generate source hash for attestation
+          SOURCE_HASH=$(curl -s https://api.github.com/repos/${{ github.repository }}/tarball/${{ github.sha }} | sha256sum | cut -d' ' -f1)
+          echo "SOURCE_HASH=$SOURCE_HASH" >> $GITHUB_OUTPUT
+          
+          # Generate build attestation
+          BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          ATTESTATION=$(echo -n "${{ github.sha }}:$BUILD_TIME:$SOURCE_HASH" | sha256sum | cut -d' ' -f1)
+          echo "BUILD_TIME=$BUILD_TIME" >> $GITHUB_OUTPUT
+          echo "ATTESTATION=$ATTESTATION" >> $GITHUB_OUTPUT
+
+      - name: Build container image with attestation
+        run: |
+          docker build \
+            --build-arg VERSION=${{ github.ref_name }} \
+            --build-arg COMMIT_SHA=${{ github.sha }} \
+            --build-arg BUILD_TIME=${{ steps.attestation.outputs.BUILD_TIME }} \
+            --label "attestation=${{ steps.attestation.outputs.ATTESTATION }}" \
+            --label "source_hash=${{ steps.attestation.outputs.SOURCE_HASH }}" \
+            --label "commit_sha=${{ github.sha }}" \
+            -t ${{ secrets.REGISTRY_URL }}/$REPO_NAME:$GITHUB_SHA .
+
+      - name: Tag image as latest
+        run: docker tag ${{ secrets.REGISTRY_URL }}/$REPO_NAME:$GITHUB_SHA ${{ secrets.REGISTRY_URL }}/$REPO_NAME:latest
+
+      - name: Log in to DigitalOcean Container Registry with short-lived credentials
+        run: doctl registry login --expiry-seconds 1200
+
+      - name: Push image to DigitalOcean Container Registry
+        run: |
+          docker push ${{ secrets.REGISTRY_URL }}/$REPO_NAME:$GITHUB_SHA
+          docker push ${{ secrets.REGISTRY_URL }}/$REPO_NAME:latest
+
+      - name: Save DigitalOcean kubeconfig with short-lived credentials
+        run: doctl kubernetes cluster kubeconfig save --expiry-seconds 600 ${{ secrets.CLUSTER_NAME }}-$ENV_SUFFIX
+
+      - name: Update Kubernetes deployment with new image
+        run: kubectl set image deployment/$REPO_NAME-$ENV_SUFFIX $REPO_NAME=${{ secrets.REGISTRY_URL }}/$REPO_NAME:$GITHUB_SHA --namespace=$REPO_NAME-$ENV_SUFFIX
+
+      - name: Verify deployment
+        run: kubectl rollout status deployment/$REPO_NAME-$ENV_SUFFIX --timeout=360s --namespace=$REPO_NAME-$ENV_SUFFIX

@@ -1,0 +1,38 @@
+SAFE-CODE VERIFICATION PROJECT
+==============================
+
+Copyright (c) 2025 Engagement Labs
+All rights reserved.
+
+IMPORTANT NOTICE:
+
+This repository contains proprietary software made available for 
+VERIFICATION and TRANSPARENCY purposes only.
+
+WHAT YOU CAN DO:
+✅ View and inspect the source code
+✅ Verify that running code matches this repository
+✅ Audit for security vulnerabilities  
+✅ Suggest improvements via GitHub issues
+✅ Submit pull requests with improvements
+✅ Reference in academic/research contexts with attribution
+
+WHAT YOU CANNOT DO:
+❌ Use this code in your own projects
+❌ Copy any portion of this code
+❌ Create derivative works
+❌ Distribute or redistribute
+❌ Use for commercial purposes
+❌ Remove copyright notices
+
+PURPOSE:
+This code is published to demonstrate cryptographic verification 
+of deployed software integrity. Users can independently verify 
+that the running application matches exactly what is published 
+in this repository.
+
+VIOLATIONS:
+Any unauthorized use will result in immediate license termination 
+and potential legal action.
+
+For licensing inquiries, contact: legal@engagelabs.org
