@@ -64,7 +64,10 @@ def verify_code_attestation(app_url):
     # Step 3: Download source code from GitHub and verify hash
     print("🔄 Downloading source from GitHub...")
     try:
+        # Use commit SHA from app (works for any branch)
         tarball_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/tarball/{commit_sha}"
+        print(f"📦 Downloading commit: {commit_sha}")
+        print(f"🔗 URL: {tarball_url}")
         
         github_response = requests.get(tarball_url, timeout=30)
         if github_response.status_code == 404:
