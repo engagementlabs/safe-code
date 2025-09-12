@@ -43,6 +43,14 @@ func attestationHandler(w http.ResponseWriter, r *http.Request) {
 		"attestation":  attestation,
 	}
 	
+	// Add Nitro Enclave attestation if available
+	if nitroDoc := getNitroAttestationDocument(); nitroDoc != "" {
+		codeAttestation["nitro_document"] = nitroDoc
+		codeAttestation["nitro_enabled"] = true
+	} else {
+		codeAttestation["nitro_enabled"] = false
+	}
+	
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(codeAttestation)
 }

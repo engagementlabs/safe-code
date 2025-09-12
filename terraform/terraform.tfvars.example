@@ -1,0 +1,4 @@
+aws_region = "us-east-1"
+instance_type = "m5.large"
+key_name = "your-key-pair-name"
+telegram_bot_token = "your-telegram-bot-token"

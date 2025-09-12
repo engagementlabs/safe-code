@@ -1,0 +1,83 @@
+name: Deploy to AWS Nitro Enclave
+
+on:
+  push:
+    branches: [ dev ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: eu-central-1
+        
+    - name: Get commit info
+      id: commit
+      run: |
+        echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+        echo "time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+        
+    - name: Deploy to EC2
+      env:
+        COMMIT_SHA: ${{ steps.commit.outputs.sha }}
+        BUILD_TIME: ${{ steps.commit.outputs.time }}
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        EC2_HOST: ${{ secrets.EC2_HOST }}
+        EC2_KEY: ${{ secrets.EC2_PRIVATE_KEY }}
+      run: |
+        # Setup SSH
+        mkdir -p ~/.ssh
+        
+        # Write key preserving newlines
+        printf '%s\n' "$EC2_KEY" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        
+        # Remove carriage returns
+        sed -i 's/\r$//' ~/.ssh/id_rsa
+        
+        # Validate key
+        if ! ssh-keygen -y -f ~/.ssh/id_rsa >/dev/null 2>&1; then
+          echo "❌ SSH key validation failed"
+          echo "Key size: $(wc -c < ~/.ssh/id_rsa) bytes"
+          echo "Key lines: $(wc -l < ~/.ssh/id_rsa)"
+          exit 1
+        fi
+        
+        ssh-keyscan -H $EC2_HOST >> ~/.ssh/known_hosts
+        
+        # Copy files to EC2
+        scp -i ~/.ssh/id_rsa parent-main.go Dockerfile.parent deploy-hybrid.sh ec2-user@$EC2_HOST:~/
+        
+        # Deploy on EC2
+        ssh -i ~/.ssh/id_rsa ec2-user@$EC2_HOST << 'EOF'
+          export TELEGRAM_BOT_TOKEN="${{ secrets.TELEGRAM_BOT_TOKEN }}"
+          export COMMIT_SHA="${{ steps.commit.outputs.sha }}"
+          export BUILD_TIME="${{ steps.commit.outputs.time }}"
+          
+          # Stop existing services
+          docker stop $(docker ps -q) 2>/dev/null || true
+          sudo nitro-cli terminate-enclave --all 2>/dev/null || true
+          
+          # Build and deploy with real commit info
+          docker build -f Dockerfile.parent \
+            --build-arg COMMIT_SHA=$COMMIT_SHA \
+            --build-arg BUILD_TIME=$BUILD_TIME \
+            -t safe-code-parent .
+            
+          docker run -d -p 8080:8080 \
+            -e TELEGRAM_BOT_TOKEN="$TELEGRAM_BOT_TOKEN" \
+            safe-code-parent
+            
+          echo "✅ Deployment completed!"
+          echo "Commit: $COMMIT_SHA"
+          echo "Build Time: $BUILD_TIME"
+        EOF
